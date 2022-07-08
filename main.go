@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 func GetFilesFromDir(root string) ([]string, error) {
@@ -24,14 +25,24 @@ func CheckDirExists(path string) {
 	}
 }
 
-func GetPassedTests(path string) []string {
-	passedTestIds := []string{}
+func GetTests(path string) []string {
+	testIds := []string{}
 	files, err := GetFilesFromDir(path)
 	if err != nil {
+		// TODO: this should be handled better
 		panic(err)
 	}
-	fmt.Println(files)
-	return passedTestIds
+
+	tcIdPattern, err := regexp.Compile("report_(?P<id>[a-zA-Z0-9]+-\\d+)_.*")
+	idIndex := tcIdPattern.SubexpIndex("id")
+
+	for _, file := range files {
+		filename := filepath.Base(file)
+		// TODO: what if not submatch is found, does the indexing fail ?
+		tcId := tcIdPattern.FindStringSubmatch(filename)[idIndex]
+		testIds = append(testIds, tcId)
+	}
+	return testIds
 }
 
 func main() {
@@ -50,6 +61,9 @@ func main() {
 	CheckDirExists(passedPath)
 	CheckDirExists(failedPath)
 
-	passedTestIds := GetPassedTests(passedPath)
-	log.Println(passedTestIds)
+	passedTestIds := GetTests(passedPath)
+	failedTestIds := GetTests(failedPath)
+
+	log.Println("Passed", passedTestIds)
+	log.Println("Failed", failedTestIds)
 }
