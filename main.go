@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,6 +23,18 @@ func GetFilesFromDir(root string) ([]string, error) {
 func CheckDirExists(path string) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		log.Fatalf("'%s' folder does not exist. Please create it!", filepath.Base(path))
+	}
+}
+
+func CheckMasterExists(path string) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, file := range files {
+		fmt.Println(file.Name(), file.IsDir())
+		// TODO: check master in file.Name()
 	}
 }
 
@@ -60,6 +73,7 @@ func main() {
 	// Make sure expected paths are created
 	CheckDirExists(passedPath)
 	CheckDirExists(failedPath)
+	CheckMasterExists(root)
 
 	passedTestIds := GetTests(passedPath)
 	failedTestIds := GetTests(failedPath)
