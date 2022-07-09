@@ -32,6 +32,43 @@ type TaExport struct {
 	DvPlan  DVPlan   `xml:"dv-plan"`
 }
 
+func (t *TaExport) Clone(protocols []*Protocol) *TaExport {
+	return &TaExport{
+		DvPlan: DVPlan{
+			ProjectId:        t.DvPlan.ProjectId,
+			Id:               t.DvPlan.Id,
+			BuildResult:      t.DvPlan.BuildResult,
+			VerificationLoop: t.DvPlan.VerificationLoop,
+			Protocols:        protocols,
+		},
+	}
+}
+
+type ProtocolsMap map[string]*Protocol
+
+func GetProtocolsMap(taExport *TaExport) ProtocolsMap {
+	out := ProtocolsMap{}
+
+	for _, protocol := range taExport.DvPlan.Protocols {
+		out[protocol.Id] = protocol
+	}
+	return out
+}
+
+func GetProtocolsForIds(protocolsMap ProtocolsMap, tcIds []string) []*Protocol {
+	out := []*Protocol{}
+
+	for _, id := range tcIds {
+		protocol, ok := protocolsMap[id]
+		if !ok {
+			log.Fatalf("TC Id (%s) is not in protocols map! Faulty processing of tc IDs or master xml!", id)
+		}
+		out = append(out, protocol)
+	}
+
+	return out
+}
+
 func GetFilesFromDir(root string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -136,11 +173,23 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(taExport.DvPlan.ProjectId, taExport.DvPlan.Id)
-	fmt.Println(taExport.DvPlan.BuildResult, taExport.DvPlan.VerificationLoop)
-	fmt.Println(
-        taExport.DvPlan.Protocols[0].Id,
-        taExport.DvPlan.Protocols[0].ProjectId,
-        taExport.DvPlan.Protocols[0].TestScriptReference
-    )
+	/*
+			fmt.Println(taExport.DvPlan.ProjectId, taExport.DvPlan.Id)
+			fmt.Println(taExport.DvPlan.BuildResult, taExport.DvPlan.VerificationLoop)
+			fmt.Println(
+		        taExport.DvPlan.Protocols[0].Id,
+		        taExport.DvPlan.Protocols[0].ProjectId,
+		        taExport.DvPlan.Protocols[0].TestScriptReference
+		    )
+	*/
+	protocolsMap := GetProtocolsMap(&taExport)
+	passedProtocols := GetProtocolsForIds(protocolsMap, passedTestIds)
+	failedProtocols := GetProtocolsForIds(protocolsMap, failedTestIds)
+
+	passedTaExport := taExport.Clone(passedProtocols)
+	failedTaExport := taExport.Clone(failedProtocols)
+	fmt.Println(passedTaExport, failedTaExport)
+
+	// TODO: 1. Marshal and write passed & failed export to file
+	// TODO: 2. Compute the remaining TCs and marshal & write to file
 }
