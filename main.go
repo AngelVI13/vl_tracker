@@ -70,6 +70,11 @@ func main() {
 	passedPath := filepath.Join(root, "passed")
 	failedPath := filepath.Join(root, "failed")
 
+	// TODO: no need to check for folders, we can just extract all xml reports
+	//       from the current dir and take their status from the filename
+	//       If an id is found as passed and failed we only take the passed status.
+	//       The final output should be passed.xml, failed.xml, remaining.xml
+	//       The reason for havin failed.xml generated is so that its easier to rerun tests
 	// Make sure expected paths are created
 	CheckDirExists(passedPath)
 	CheckDirExists(failedPath)
