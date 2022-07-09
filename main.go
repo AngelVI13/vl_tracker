@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/xml"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -8,6 +10,27 @@ import (
 	"path/filepath"
 	"regexp"
 )
+
+type Protocol struct {
+	XMLName             xml.Name `xml:"protocol"`
+	ProjectId           string   `xml:"project-id,attr"`
+	Id                  string   `xml:"id,attr"`
+	TestScriptReference string   `xml:"test-script-reference"`
+}
+
+type DVPlan struct {
+	XMLName          xml.Name    `xml:"dv-plan"`
+	ProjectId        string      `xml:"project-id,attr"`
+	Id               string      `xml:"id,attr"`
+	BuildResult      string      `xml:"build-result"`
+	VerificationLoop string      `xml:"verification-loop"`
+	Protocols        []*Protocol `xml:"protocols>protocol"`
+}
+
+type TaExport struct {
+	XMLName xml.Name `xml:"ta-tool-export"`
+	DvPlan  DVPlan   `xml:"dv-plan"`
+}
 
 func GetFilesFromDir(root string) ([]string, error) {
 	var files []string
@@ -26,16 +49,25 @@ func CheckDirExists(path string) {
 	}
 }
 
-func CheckMasterExists(path string) {
+func GetMasterFile(path string) (string, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
+	}
+
+	masterPattern, err := regexp.Compile("^master_.*?\\.xml$")
+	if err != nil {
+		return "", err
 	}
 
 	for _, file := range files {
-		fmt.Println(file.Name(), file.IsDir())
-		// TODO: check master in file.Name()
+		fileName := file.Name()
+		if masterPattern.MatchString(fileName) {
+			log.Printf("Found master file '%s'\n", fileName)
+			return fileName, nil
+		}
 	}
+	return "", errors.New("Coudln't find master `master_*.xml` file. Please make sure its in the current directory")
 }
 
 func GetTests(path string) []string {
@@ -75,14 +107,40 @@ func main() {
 	//       If an id is found as passed and failed we only take the passed status.
 	//       The final output should be passed.xml, failed.xml, remaining.xml
 	//       The reason for havin failed.xml generated is so that its easier to rerun tests
+
 	// Make sure expected paths are created
 	CheckDirExists(passedPath)
 	CheckDirExists(failedPath)
-	CheckMasterExists(root)
+
+	// Make sure master file exists
+	master, err := GetMasterFile(root)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(master)
 
 	passedTestIds := GetTests(passedPath)
 	failedTestIds := GetTests(failedPath)
 
 	log.Println("Passed", passedTestIds)
 	log.Println("Failed", failedTestIds)
+
+	masterData, err := os.ReadFile(master)
+	if err != nil {
+		panic(err)
+	}
+
+	var taExport TaExport
+	err = xml.Unmarshal(masterData, &taExport)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(taExport.DvPlan.ProjectId, taExport.DvPlan.Id)
+	fmt.Println(taExport.DvPlan.BuildResult, taExport.DvPlan.VerificationLoop)
+	fmt.Println(
+        taExport.DvPlan.Protocols[0].Id,
+        taExport.DvPlan.Protocols[0].ProjectId,
+        taExport.DvPlan.Protocols[0].TestScriptReference
+    )
 }
