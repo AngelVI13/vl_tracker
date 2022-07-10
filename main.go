@@ -136,6 +136,34 @@ func WriteXmlFile(path string, data *TaExport) error {
 	return os.WriteFile(path, out, 0644)
 }
 
+func GetRemainingProtocols(passed, failed []*Protocol, protocolsMap ProtocolsMap) []*Protocol {
+	remaining := []*Protocol{}
+	seenMap := map[string]int{}
+
+	for id := range protocolsMap {
+		seenMap[id] = 0
+	}
+
+	for _, protocol := range passed {
+		seenMap[protocol.Id] += 1
+	}
+
+	for _, protocol := range failed {
+		seenMap[protocol.Id] += 1
+	}
+
+	for id, run_times := range seenMap {
+		if run_times == 0 {
+			protocol, ok := protocolsMap[id]
+			if !ok {
+				log.Fatalf("Found ID(%s) in seenMap but not in protocolsMap! Error in processing of remaining TCs", id)
+			}
+			remaining = append(remaining, protocol)
+		}
+	}
+	return remaining
+}
+
 func main() {
 	root, err := os.Getwd()
 	if err != nil {
@@ -183,12 +211,17 @@ func main() {
 	}
 
 	protocolsMap := GetProtocolsMap(&taExport)
+	// TODO: need to exclude any failed protocols if they are also present in the passed protocols
+	//       This can happen if a test originally failed but after rexecution is now passed
+	//          => should be considered as passed
 	passedProtocols := GetProtocolsForIds(protocolsMap, passedTestIds)
 	failedProtocols := GetProtocolsForIds(protocolsMap, failedTestIds)
+	remainingProtocols := GetRemainingProtocols(passedProtocols, failedProtocols, protocolsMap)
 
 	passedTaExport := taExport.Clone(passedProtocols)
 	failedTaExport := taExport.Clone(failedProtocols)
-	fmt.Println(passedTaExport, failedTaExport)
+	remainingTaExport := taExport.Clone(remainingProtocols)
+	fmt.Println(passedTaExport, failedTaExport, remainingProtocols)
 
 	err = WriteXmlFile("passed.xml", passedTaExport)
 	if err != nil {
@@ -199,5 +232,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to write `failed.xml`: %+v", err)
 	}
-	// TODO: 2. Compute the remaining TCs and marshal & write to file
+
+	err = WriteXmlFile("remaining.xml", remainingTaExport)
+	if err != nil {
+		log.Fatalf("Failed to write `remaining.xml`: %+v", err)
+	}
 }
