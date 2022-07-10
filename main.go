@@ -112,7 +112,7 @@ func GetTests(path string) []string {
 	files, err := GetFilesFromDir(path)
 	if err != nil {
 		// TODO: this should be handled better
-		panic(err)
+		log.Fatal(err)
 	}
 
 	tcIdPattern, err := regexp.Compile("report_(?P<id>[a-zA-Z0-9]+-\\d+)_.*")
@@ -127,10 +127,19 @@ func GetTests(path string) []string {
 	return testIds
 }
 
+func WriteXmlFile(path string, data *TaExport) error {
+	out, err := xml.MarshalIndent(&data, " ", "\t")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, out, 0644)
+}
+
 func main() {
 	root, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	fmt.Printf("Running script in: \t%s\n\n", root)
 
@@ -152,7 +161,7 @@ func main() {
 	// Make sure master file exists
 	master, err := GetMasterFile(root)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	log.Println(master)
 
@@ -164,24 +173,15 @@ func main() {
 
 	masterData, err := os.ReadFile(master)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	var taExport TaExport
 	err = xml.Unmarshal(masterData, &taExport)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	/*
-			fmt.Println(taExport.DvPlan.ProjectId, taExport.DvPlan.Id)
-			fmt.Println(taExport.DvPlan.BuildResult, taExport.DvPlan.VerificationLoop)
-			fmt.Println(
-		        taExport.DvPlan.Protocols[0].Id,
-		        taExport.DvPlan.Protocols[0].ProjectId,
-		        taExport.DvPlan.Protocols[0].TestScriptReference
-		    )
-	*/
 	protocolsMap := GetProtocolsMap(&taExport)
 	passedProtocols := GetProtocolsForIds(protocolsMap, passedTestIds)
 	failedProtocols := GetProtocolsForIds(protocolsMap, failedTestIds)
@@ -190,6 +190,14 @@ func main() {
 	failedTaExport := taExport.Clone(failedProtocols)
 	fmt.Println(passedTaExport, failedTaExport)
 
-	// TODO: 1. Marshal and write passed & failed export to file
+	err = WriteXmlFile("passed.xml", passedTaExport)
+	if err != nil {
+		log.Fatalf("Failed to write `passed.xml`: %+v", err)
+	}
+
+	err = WriteXmlFile("failed.xml", failedTaExport)
+	if err != nil {
+		log.Fatalf("Failed to write `failed.xml`: %+v", err)
+	}
 	// TODO: 2. Compute the remaining TCs and marshal & write to file
 }
