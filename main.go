@@ -124,7 +124,6 @@ func GetTests(path string) (passed, failed []string) {
 
 		tcId := tcIdPattern.FindStringSubmatch(filename)[idIndex]
 		tcStatus := tcIdPattern.FindStringSubmatch(filename)[statusIndex]
-		log.Println(tcId, tcStatus)
 
 		if tcStatus == "PASS" {
 			passedMap[tcId] = filename
@@ -223,6 +222,10 @@ func main() {
 	passedProtocols := GetProtocolsForIds(protocolsMap, passedTestIds)
 	failedProtocols := GetProtocolsForIds(protocolsMap, failedTestIds)
 	remainingProtocols := GetRemainingProtocols(passedProtocols, failedProtocols, protocolsMap)
+	log.Println("Master ", len(protocolsMap))
+	log.Println("Passed ", len(passedTestIds))
+	log.Println("Failed ", len(failedTestIds))
+	log.Println("Remaining ", len(remainingProtocols))
 
 	passedTaExport := taExport.Clone(passedProtocols)
 	failedTaExport := taExport.Clone(failedProtocols)
