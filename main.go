@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -61,7 +60,7 @@ func GetProtocolsForIds(protocolsMap ProtocolsMap, tcIds []string) []*Protocol {
 	for _, id := range tcIds {
 		protocol, ok := protocolsMap[id]
 		if !ok {
-			log.Fatalf("TC Id (%s) is not in protocols map! Faulty processing of tc IDs or master xml!", id)
+			log.Printf("WARNING: TC Id (%s) is not in protocols map! Faulty processing of tc IDs or master xml!", id)
 		}
 		out = append(out, protocol)
 	}
@@ -78,12 +77,6 @@ func GetFilesFromDir(root string) ([]string, error) {
 		return nil
 	})
 	return files, err
-}
-
-func CheckDirExists(path string) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Fatalf("'%s' folder does not exist. Please create it!", filepath.Base(path))
-	}
 }
 
 func GetMasterFile(path string) (string, error) {
@@ -107,24 +100,54 @@ func GetMasterFile(path string) (string, error) {
 	return "", errors.New("Coudln't find master `master_*.xml` file. Please make sure its in the current directory")
 }
 
-func GetTests(path string) []string {
-	testIds := []string{}
+func GetTests(path string) (passed, failed []string) {
+	passedMap := map[string]string{}
+	failedMap := map[string]string{}
+
 	files, err := GetFilesFromDir(path)
 	if err != nil {
-		// TODO: this should be handled better
-		log.Fatal(err)
+		log.Fatalf("Couldn't get files from dir (%s): %+v", path, err)
 	}
 
-	tcIdPattern, err := regexp.Compile("report_(?P<id>[a-zA-Z0-9]+-\\d+)_.*")
+	// Example filenames:
+	// report_4AP2-65015_PASS_2022_07_08_14h_11m.xml
+	// report_4AP2-38126_FAIL_2022_07_08_17h_53m.xml
+	tcIdPattern, err := regexp.Compile("report_(?P<id>[a-zA-Z0-9]+-\\d+)_(?P<status>[A-Z]+)_.*")
 	idIndex := tcIdPattern.SubexpIndex("id")
+	statusIndex := tcIdPattern.SubexpIndex("status")
 
 	for _, file := range files {
 		filename := filepath.Base(file)
-		// TODO: what if not submatch is found, does the indexing fail ?
+		if !tcIdPattern.MatchString(filename) {
+			continue
+		}
+
 		tcId := tcIdPattern.FindStringSubmatch(filename)[idIndex]
-		testIds = append(testIds, tcId)
+		tcStatus := tcIdPattern.FindStringSubmatch(filename)[statusIndex]
+		log.Println(tcId, tcStatus)
+
+		if tcStatus == "PASS" {
+			passedMap[tcId] = filename
+		} else {
+			failedMap[tcId] = filename
+		}
 	}
-	return testIds
+
+	for failedTc := range failedMap {
+		// If failed TC is found in the passed TCs -> remove from failed
+		// we don't care about a TCs intermediate status so long as it is passed in the end
+		if _, found := passedMap[failedTc]; found {
+			delete(failedMap, failedTc)
+			continue
+		}
+		failed = append(failed, failedTc)
+	}
+
+	for passedTc := range passedMap {
+		passed = append(passed, passedTc)
+	}
+
+	return passed, failed
 }
 
 func WriteXmlFile(path string, data *TaExport) error {
@@ -156,6 +179,7 @@ func GetRemainingProtocols(passed, failed []*Protocol, protocolsMap ProtocolsMap
 		if run_times == 0 {
 			protocol, ok := protocolsMap[id]
 			if !ok {
+				// NOTE: This should never happen since seenMap is created from protocolsMap
 				log.Fatalf("Found ID(%s) in seenMap but not in protocolsMap! Error in processing of remaining TCs", id)
 			}
 			remaining = append(remaining, protocol)
@@ -169,51 +193,33 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Running script in: \t%s\n\n", root)
+	log.Printf("Running script in: \t%s\n\n", root)
 
 	// TODO: remove remaining_tests.xml cause it will be regenerated
-
-	passedPath := filepath.Join(root, "passed")
-	failedPath := filepath.Join(root, "failed")
-
-	// TODO: no need to check for folders, we can just extract all xml reports
-	//       from the current dir and take their status from the filename
-	//       If an id is found as passed and failed we only take the passed status.
-	//       The final output should be passed.xml, failed.xml, remaining.xml
-	//       The reason for havin failed.xml generated is so that its easier to rerun tests
-
-	// Make sure expected paths are created
-	CheckDirExists(passedPath)
-	CheckDirExists(failedPath)
 
 	// Make sure master file exists
 	master, err := GetMasterFile(root)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println(master)
 
-	passedTestIds := GetTests(passedPath)
-	failedTestIds := GetTests(failedPath)
+	passedTestIds, failedTestIds := GetTests(root)
 
 	log.Println("Passed", passedTestIds)
 	log.Println("Failed", failedTestIds)
 
 	masterData, err := os.ReadFile(master)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to read master file `%s`: %+v", master, err)
 	}
 
 	var taExport TaExport
 	err = xml.Unmarshal(masterData, &taExport)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to unmarshal master file `%s`: %+v", master, err)
 	}
 
 	protocolsMap := GetProtocolsMap(&taExport)
-	// TODO: need to exclude any failed protocols if they are also present in the passed protocols
-	//       This can happen if a test originally failed but after rexecution is now passed
-	//          => should be considered as passed
 	passedProtocols := GetProtocolsForIds(protocolsMap, passedTestIds)
 	failedProtocols := GetProtocolsForIds(protocolsMap, failedTestIds)
 	remainingProtocols := GetRemainingProtocols(passedProtocols, failedProtocols, protocolsMap)
@@ -221,7 +227,6 @@ func main() {
 	passedTaExport := taExport.Clone(passedProtocols)
 	failedTaExport := taExport.Clone(failedProtocols)
 	remainingTaExport := taExport.Clone(remainingProtocols)
-	fmt.Println(passedTaExport, failedTaExport, remainingProtocols)
 
 	err = WriteXmlFile("passed.xml", passedTaExport)
 	if err != nil {
