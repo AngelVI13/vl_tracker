@@ -3,11 +3,18 @@ package main
 import (
 	"encoding/xml"
 	"errors"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+)
+
+const (
+	PassedXML    = "passed.xml"
+	FailedXML    = "failed.xml"
+	RemainingXML = "remaining.xml"
 )
 
 type Protocol struct {
@@ -188,13 +195,26 @@ func GetRemainingProtocols(passed, failed []*Protocol, protocolsMap ProtocolsMap
 }
 
 func main() {
+	// Set up logging to stdout and file
+	logFile, err := os.OpenFile("log.txt", os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		panic(err)
+	}
+	mw := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(mw)
+
+	// Get current directory
 	root, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Running script in: \t%s\n\n", root)
+	log.Printf("Running script in: \t%s\n", root)
 
-	// TODO: remove remaining_tests.xml cause it will be regenerated
+	// Remove old xml files
+	// NOTE: whether this succeeds or not is not important
+	os.Remove(PassedXML)
+	os.Remove(FailedXML)
+	os.Remove(RemainingXML)
 
 	// Make sure master file exists
 	master, err := GetMasterFile(root)
@@ -204,8 +224,8 @@ func main() {
 
 	passedTestIds, failedTestIds := GetTests(root)
 
-	log.Println("Passed", passedTestIds)
-	log.Println("Failed", failedTestIds)
+	log.Println("Found Passed TCs", passedTestIds)
+	log.Println("Found Failed TCs", failedTestIds)
 
 	masterData, err := os.ReadFile(master)
 	if err != nil {
@@ -231,18 +251,19 @@ func main() {
 	failedTaExport := taExport.Clone(failedProtocols)
 	remainingTaExport := taExport.Clone(remainingProtocols)
 
-	err = WriteXmlFile("passed.xml", passedTaExport)
+	err = WriteXmlFile(PassedXML, passedTaExport)
 	if err != nil {
-		log.Fatalf("Failed to write `passed.xml`: %+v", err)
+		log.Fatalf("Failed to write `%s`: %+v", PassedXML, err)
 	}
 
-	err = WriteXmlFile("failed.xml", failedTaExport)
+	err = WriteXmlFile(FailedXML, failedTaExport)
 	if err != nil {
-		log.Fatalf("Failed to write `failed.xml`: %+v", err)
+		log.Fatalf("Failed to write `%s`: %+v", FailedXML, err)
 	}
 
-	err = WriteXmlFile("remaining.xml", remainingTaExport)
+	err = WriteXmlFile(RemainingXML, remainingTaExport)
 	if err != nil {
-		log.Fatalf("Failed to write `remaining.xml`: %+v", err)
+		log.Fatalf("Failed to write `%s`: %+v", RemainingXML, err)
 	}
+	log.Println("Generated xml files")
 }
