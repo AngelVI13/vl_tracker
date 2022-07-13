@@ -15,6 +15,8 @@ const (
 	PassedXML    = "passed.xml"
 	FailedXML    = "failed.xml"
 	RemainingXML = "remaining.xml"
+
+	LogFile = "log.txt"
 )
 
 type Protocol struct {
@@ -139,15 +141,18 @@ func GetTests(path string) (passed, failed []string) {
 		}
 	}
 
+	failedThatPassed := []string{}
 	for failedTc := range failedMap {
 		// If failed TC is found in the passed TCs -> remove from failed
 		// we don't care about a TCs intermediate status so long as it is passed in the end
 		if _, found := passedMap[failedTc]; found {
 			delete(failedMap, failedTc)
+			failedThatPassed = append(failedThatPassed, failedTc)
 			continue
 		}
 		failed = append(failed, failedTc)
 	}
+	log.Println("Failed TCs that later Passed", failedThatPassed)
 
 	for passedTc := range passedMap {
 		passed = append(passed, passedTc)
@@ -195,8 +200,10 @@ func GetRemainingProtocols(passed, failed []*Protocol, protocolsMap ProtocolsMap
 }
 
 func main() {
+	// Delete old log file
+	os.Remove(LogFile)
 	// Set up logging to stdout and file
-	logFile, err := os.OpenFile("log.txt", os.O_CREATE|os.O_RDWR, 0666)
+	logFile, err := os.OpenFile(LogFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
 		panic(err)
 	}
