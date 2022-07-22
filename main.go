@@ -110,8 +110,8 @@ func GetMasterFile(path string) (string, error) {
 }
 
 func GetTests(path string) (passed, failed []string) {
-	passedMap := map[string]string{}
-	failedMap := map[string]string{}
+	passedMap := map[string]int{}
+	failedMap := map[string]int{}
 
 	files, err := GetFilesFromDir(path)
 	if err != nil {
@@ -135,14 +135,19 @@ func GetTests(path string) (passed, failed []string) {
 		tcStatus := tcIdPattern.FindStringSubmatch(filename)[statusIndex]
 
 		if tcStatus == "PASS" {
-			passedMap[tcId] = filename
+			passedMap[tcId] += 1
 		} else {
-			failedMap[tcId] = filename
+			failedMap[tcId] += 1
 		}
 	}
 
+	failedDuplicates := []string{}
 	failedThatPassed := []string{}
 	for failedTc := range failedMap {
+		if failedMap[failedTc] > 1 {
+			failedDuplicates = append(failedDuplicates, failedTc)
+		}
+
 		// If failed TC is found in the passed TCs -> remove from failed
 		// we don't care about a TCs intermediate status so long as it is passed in the end
 		if _, found := passedMap[failedTc]; found {
@@ -150,9 +155,11 @@ func GetTests(path string) (passed, failed []string) {
 			failedThatPassed = append(failedThatPassed, failedTc)
 			continue
 		}
+
 		failed = append(failed, failedTc)
 	}
 	log.Println("Failed TCs that later Passed", failedThatPassed)
+	log.Println("Failed Multiple Times", failedDuplicates)
 
 	for passedTc := range passedMap {
 		passed = append(passed, passedTc)
